@@ -26,6 +26,7 @@ public class NTGA implements Algorithm{
     int epochs = 1000;  // how many iteration will the algorithm run
     int tournamentSize = 8;  // tournament size
     double mutationRate = 0.1;  // the probability of mutation
+    // todo: if mutationRate smaller than 0.01 the program maybe crashed in mutation func
 
     // Initiate the number of solutions from the problem
     public NTGA(int numOfSolutions) {
@@ -39,20 +40,29 @@ public class NTGA implements Algorithm{
         List<Solution> newGeneration = new ArrayList<>();  // init new generation
         while (newGeneration.size() < populationSize) {
             List<Solution> parents = new ArrayList<>();
-            for (int n = 0; n < 2; ++n) {  // generate two parents
+            for (int n = 0; n < 2; ++n) {  // select two parents
                 Solution parent = tournamentSelect(population, tournamentSize);  // tournament selection
                 parents.add(parent);
             }
             List<Solution> offspring = orderCrossover(problem, parents, false, true);  // order crossover (OX)
-            offspring = mutate(problem, offspring, mutationRate, false);  // individuals mutations
-            // TODO: clone prevention and iteration
+            mutate(problem, offspring, mutationRate, false);
+            // clone prevention
 
-            break;
+//            for (Solution individual : offspring){
+                // todo: 直接isContained 函数形参是 offspring 否则每次循环都要重新newpopulation中的pi和z
+//                boolean individualInPopulation = isContained(individual, population);
+//                // show whether contain result
+//                System.out.println("whether contain: " + individualInPopulation);
+//                if (individualInPopulation){
+//                    continue;
+//                }
+//            }
+
         }
 
         return null;
     }
-    
+
     /**
      * tournament selection
      * @param tournamentSize the number of individuals will be compare by comparison operator
@@ -69,6 +79,14 @@ public class NTGA implements Algorithm{
                 best = individual;
         }
         return best;
+    }
+
+    /**
+     * clone prevention - whether the newPopulation is contained in the originalPopulation
+     * */
+    private void isContained(List<Solution>newPopulation, List<Solution> originalPopulation){
+        // todo: 可以参考checkForClones判断是否变异某个个体
+        // if cloned: mutate(individual)
     }
 
     /**
@@ -225,9 +243,18 @@ public class NTGA implements Algorithm{
             System.out.println("child2Z: " + secondChildZ);
         }
 
-        // evaluate generated children population
-        Solution child1 = problem.evaluate(firstChildPI, firstChildZ, true);
-        Solution child2 = problem.evaluate(secondChildPI, secondChildZ, true);
+//        // evaluate generated children population
+//        Solution child1 = problem.evaluate(firstChildPI, firstChildZ, true);
+//        Solution child2 = problem.evaluate(secondChildPI, secondChildZ, true);
+
+        // init two children
+        Solution child1 = new Solution();
+        child1.pi = firstChildPI;
+        child1.z = firstChildZ;
+        Solution child2 = new Solution();
+        child2.pi = secondChildPI;
+        child2.z = secondChildZ;
+
         children.add(child1);
         children.add(child2);
 
@@ -235,49 +262,42 @@ public class NTGA implements Algorithm{
     }
 
     /**
-     * M-gene / Swap mutation
-     * @param population a subset of population which only have two individuals
+     * M-gene / Swap individual mutation (in-place)
+     * @param IND either an individual or a popualtion
      * @param mutationRate the probability of mutation
      */
-    private List<Solution> mutate(TravelingThiefProblem problem, List<Solution> population, double mutationRate, boolean showInfo){
+    private void mutate(TravelingThiefProblem problem, List<Solution> IND, double mutationRate, boolean showInfo){
         Random rand = new Random();
 
-        Solution individual1 = population.get(0);
-        Solution individual2 = population.get(1);
-
-        List<Solution> populationAfterMutate = new ArrayList<>();
-
-        // show info before mutation Z
+        // show one of population info before mutation Z
         if (showInfo)
-            System.out.println("before mutation:" + "\n" + "individual 1: " + individual1.z + "\n" + "individual 1: " + individual2.z);
+            System.out.println("before mutation:" + "\n" + "individual: " + IND.get(0).z);
 
         int percentMutationRate = (int) (mutationRate * 100);  // mutation rate in hundred percent
         // M-gene Mutation Z
-        for (Solution individual : population){
-            for (int i = 0; i < individual.z.size(); ++i){
-                if (rand.nextInt(100) < percentMutationRate){
-                    if (individual.z.get(i)){
+        for (Solution individual : IND) {
+            for (int i = 0; i < individual.z.size(); ++i) {
+                if (rand.nextInt(100) < percentMutationRate) {
+                    if (individual.z.get(i)) {
                         individual.z.set(i, false);
-                    }
-                    else {
+                    } else {
                         individual.z.set(i, true);
                     }
                 }
             }
         }
 
-        // show info after mutation Z
+        // show one of population info after mutation Z
         if (showInfo)
-            System.out.println("after mutation:" + "\n" + "individual 1: " + individual1.z + "\n" + "individual 2: " + individual2.z);
+            System.out.println("after mutation:" + "\n" + "individual: " + IND.get(0).z);
 
-
-        // show info before mutation pi
+        // show one of population info before mutation pi
         if (showInfo)
-            System.out.println("before mutation pi:" + "\n" + "individual 1: " + individual1.pi + "\n" + "individual 2: " + individual2.pi);
+            System.out.println("before mutation pi:" + "\n" + "individual: " + IND.get(0).pi);
         // Swap Mutation PI
-        for (Solution individual : population){
-            for (int i = 1; i < individual.pi.size(); ++i){  // the first tour should not be swap mutated
-                if (rand.nextInt(100) < percentMutationRate){
+        for (Solution individual : IND) {
+            for (int i = 1; i < individual.pi.size(); ++i) {  // the first tour should not be swap mutated
+                if (rand.nextInt(100) < percentMutationRate) {
                     // Generate integers in the interval [1, size)
                     int swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
                     while (swapPosition == i)  // make sure the position to ve swapped is different from current
@@ -291,21 +311,9 @@ public class NTGA implements Algorithm{
                 }
             }
         }
-        // show info after mutation pi
+        // show one of population info after mutation pi
         if (showInfo)
-            System.out.println("before mutation pi:" + "\n" + "individual 1: " + individual1.pi + "\n" + "individual 2: " + individual2.pi);
-
-        // evaluate
-        individual1 = problem.evaluate(individual1.pi, individual1.z, true);
-        individual2 = problem.evaluate(individual2.pi, individual2.z, true);
-        populationAfterMutate.add(individual1);
-        populationAfterMutate.add(individual2);
-
-        return populationAfterMutate;
-    }
-
-    private List<Solution> clonePrevent(List<Solution> originalPopulation, List<Solution> newPopulation){
-        return newPopulation;
+            System.out.println("before mutation pi:" + "\n" + "individual: " + IND.get(0).pi);
     }
 
     /**
