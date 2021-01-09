@@ -19,16 +19,18 @@ import org.w3c.dom.ranges.Range;
 // NTGA (Non-dominated Tournament Genetic Algorithm) implementation for TTP (traveling thief problem)
 public class NTGA implements Algorithm{
     int populationSize;
+    public List<Solution> entries = new LinkedList<>();
+    /**
+     * the hyperparameters below can by changed logically
+     * */
     int epochs = 1000;  // how many iteration will the algorithm run
     int tournamentSize = 8;  // tournament size
-    public List<Solution> entries = new LinkedList<>();
-
+    double mutationRate = 0.1;  // the probability of mutation
 
     // Initiate the number of solutions from the problem
     public NTGA(int numOfSolutions) {
         this.populationSize = numOfSolutions;
     }
-
 
     @Override
     public List<Solution> solve(TravelingThiefProblem problem) {
@@ -41,34 +43,16 @@ public class NTGA implements Algorithm{
                 Solution parent = tournamentSelect(population, tournamentSize);  // tournament selection
                 parents.add(parent);
             }
-            orderCrossover(parents, false, true);  // in-place order crossover (OX)
-            mutate(parents);  // individuals mutations
+            List<Solution> offspring = orderCrossover(problem, parents, false, true);  // order crossover (OX)
+            offspring = mutate(problem, offspring, mutationRate, false);  // individuals mutations
+            // TODO: clone prevention and iteration
+
             break;
         }
 
-
-
-
-//        List<Solution> nextGeneration = new ArrayList<>();  // init next generation
-//        for (int epoch = 0; epoch < epochs; ++ epoch) {
-//            while (nextGeneration.size() < populationSize) {
-//                List<Solution> parents = tournamentSelect(population, tournamentSize);  // parents are selected from tournament selection
-//                List<Solution> offspring = new ArrayList<>();  // init offspring;
-//                offspring = orderCrossoverPMX(parents);  // OX(PMX) crossover;
-//                offspring = mutate(offspring);  // mutate offspring;
-//                offspring = clonePrevent(population, offspring);  // clone prevention
-//                nextGeneration.addAll(offspring);  // add offspring into next generation
-//            }
-//        }
-//        return nextGeneration;
-
         return null;
-
-
     }
-
-
-
+    
     /**
      * tournament selection
      * @param tournamentSize the number of individuals will be compare by comparison operator
@@ -149,14 +133,18 @@ public class NTGA implements Algorithm{
     }
 
     /**
-     * in-place order crossover OX
+     * order crossover OX
      * @param population a subset of population which only have two individuals
+     * @return generated offspring by order crossover operation
      */
-    private void orderCrossover(List<Solution> population, boolean showInfo, boolean crossoverZ){
+    private List<Solution> orderCrossover(TravelingThiefProblem problem, List<Solution> population, boolean showInfo, boolean crossoverZ){
         Random rand = new Random();
+
         Solution parent1 = population.get(0);
         Solution parent2 = population.get(1);
         int size = parent1.pi.size();  // get the size of tours
+
+        List<Solution> children = new ArrayList<>();  // init children population
 
         // choose two random numbers for the start and end indices of the slice
         int number1 = rand.nextInt(size - 1);
@@ -175,8 +163,8 @@ public class NTGA implements Algorithm{
         List<Integer> sublist1 = new ArrayList<>(parent1.pi.subList(start, end));
         List<Integer> sublist2 = new ArrayList<>(parent2.pi.subList(start, end));
         // init children
-        List<Integer> child1 = new ArrayList<>();
-        List<Integer> child2 = new ArrayList<>();
+        List<Integer> firstChildPI = new ArrayList<>();
+        List<Integer> secondChildPI = new ArrayList<>();
 
         // iterate over each city in the parent tours
         for (int i = 0; i < size; ++i){
@@ -185,35 +173,35 @@ public class NTGA implements Algorithm{
             int currentCityInTour2 = parent2.pi.get(i);
             // if sublist1 does not already contain the current city in parent2, add it
             if (!sublist1.contains(currentCityInTour2))
-                child1.add(currentCityInTour2);
+                firstChildPI.add(currentCityInTour2);
             // if sublist2 does not already contain the current city in parent1, add it
             if (!sublist2.contains(currentCityInTour1))
-                child2.add(currentCityInTour1);
+                secondChildPI.add(currentCityInTour1);
         }
         if (showInfo) {
-            System.out.println("child1 = " + child1);
-            System.out.println("child2 = " + child2 + "\n");
+            System.out.println("child1 = " + firstChildPI);
+            System.out.println("child2 = " + secondChildPI + "\n");
             System.out.println("sublist1 = " + sublist1);
             System.out.println("sublist2 = " + sublist2 + "\n");
         }
 
         // add sublist into child
-        child1.addAll(start, sublist1);
-        child2.addAll(start, sublist2);
+        firstChildPI.addAll(start, sublist1);
+        secondChildPI.addAll(start, sublist2);
 
-        // in-place copy operation
-        Collections.copy(parent1.pi, child1);
-        Collections.copy(parent2.pi, child2);
+//        // in-place copy operation
+//        Collections.copy(parent1.pi, firstChildPI);
+//        Collections.copy(parent2.pi, firstChildPI);
 
         if (showInfo) {
-            System.out.println("after_crossover1 = " + parent1.pi);
-            System.out.println("after_crossover2 = " + parent2.pi);
+            System.out.println("after_crossover1 = " + firstChildPI);
+            System.out.println("after_crossover2 = " + secondChildPI);
         }
 
         // I am not sure whether Z need be crossover
+        List<Boolean> firstChildZ = new ArrayList<>();
+        List<Boolean> secondChildZ = new ArrayList<>();
         if(crossoverZ){  // perform uniform crossover for Z
-            List<Boolean> firstChildZ = new ArrayList<>();
-            List<Boolean> secondChildZ = new ArrayList<>();
             for (int i = 0; i < parent1.z.size(); ++i){
                 if (rand.nextInt(2) == 0){
                     firstChildZ.add(parent1.z.get(i));
@@ -224,21 +212,96 @@ public class NTGA implements Algorithm{
                     secondChildZ.add(parent1.z.get(i));
                 }
             }
-            if (showInfo) {
-                System.out.println("parent1Z: " + parent1.z);
-                System.out.println("parent2Z: " + parent2.z);
-                System.out.println("child1Z: " + firstChildZ);
-                System.out.println("child2Z: " + secondChildZ);
-            }
         }
+        else {
+            firstChildZ = parent1.z;
+            secondChildZ = parent2.z;
+        }
+
+        if (showInfo) {
+            System.out.println("parent1Z: " + parent1.z);
+            System.out.println("parent2Z: " + parent2.z);
+            System.out.println("child1Z: " + firstChildZ);
+            System.out.println("child2Z: " + secondChildZ);
+        }
+
+        // evaluate generated children population
+        Solution child1 = problem.evaluate(firstChildPI, firstChildZ, true);
+        Solution child2 = problem.evaluate(secondChildPI, secondChildZ, true);
+        children.add(child1);
+        children.add(child2);
+
+        return children;
     }
 
     /**
-     * in-place mutation
+     * M-gene / Swap mutation
      * @param population a subset of population which only have two individuals
+     * @param mutationRate the probability of mutation
      */
-    private void mutate(List<Solution> population){
+    private List<Solution> mutate(TravelingThiefProblem problem, List<Solution> population, double mutationRate, boolean showInfo){
+        Random rand = new Random();
 
+        Solution individual1 = population.get(0);
+        Solution individual2 = population.get(1);
+
+        List<Solution> populationAfterMutate = new ArrayList<>();
+
+        // show info before mutation Z
+        if (showInfo)
+            System.out.println("before mutation:" + "\n" + "individual 1: " + individual1.z + "\n" + "individual 1: " + individual2.z);
+
+        int percentMutationRate = (int) (mutationRate * 100);  // mutation rate in hundred percent
+        // M-gene Mutation Z
+        for (Solution individual : population){
+            for (int i = 0; i < individual.z.size(); ++i){
+                if (rand.nextInt(100) < percentMutationRate){
+                    if (individual.z.get(i)){
+                        individual.z.set(i, false);
+                    }
+                    else {
+                        individual.z.set(i, true);
+                    }
+                }
+            }
+        }
+
+        // show info after mutation Z
+        if (showInfo)
+            System.out.println("after mutation:" + "\n" + "individual 1: " + individual1.z + "\n" + "individual 2: " + individual2.z);
+
+
+        // show info before mutation pi
+        if (showInfo)
+            System.out.println("before mutation pi:" + "\n" + "individual 1: " + individual1.pi + "\n" + "individual 2: " + individual2.pi);
+        // Swap Mutation PI
+        for (Solution individual : population){
+            for (int i = 1; i < individual.pi.size(); ++i){  // the first tour should not be swap mutated
+                if (rand.nextInt(100) < percentMutationRate){
+                    // Generate integers in the interval [1, size)
+                    int swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
+                    while (swapPosition == i)  // make sure the position to ve swapped is different from current
+                        swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
+                    // the value to be swapped
+                    int pi1 = individual.pi.get(i);
+                    int pi2 = individual.pi.get(swapPosition);
+                    // swap
+                    individual.pi.set(i, pi2);
+                    individual.pi.set(swapPosition, pi1);
+                }
+            }
+        }
+        // show info after mutation pi
+        if (showInfo)
+            System.out.println("before mutation pi:" + "\n" + "individual 1: " + individual1.pi + "\n" + "individual 2: " + individual2.pi);
+
+        // evaluate
+        individual1 = problem.evaluate(individual1.pi, individual1.z, true);
+        individual2 = problem.evaluate(individual2.pi, individual2.z, true);
+        populationAfterMutate.add(individual1);
+        populationAfterMutate.add(individual2);
+
+        return populationAfterMutate;
     }
 
     private List<Solution> clonePrevent(List<Solution> originalPopulation, List<Solution> newPopulation){
