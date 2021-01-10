@@ -2,31 +2,24 @@ package algorithms;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Random;
-import java.util.stream.Collectors;
 
-import model.NonDominatedSet;
 import model.Solution;
 import model.TravelingThiefProblem;
-import org.w3c.dom.ranges.Range;
 
 // NTGA (Non-dominated Tournament Genetic Algorithm) implementation for TTP (traveling thief problem)
 public class NTGA implements Algorithm{
     int populationSize;
-    public List<Solution> entries = new LinkedList<>();
     /**
-     * the hyperparameters below can by changed logically
+     * the hyper-parameters below can by changed logically
      * */
-    int epochs = 1000;  // how many iteration will the algorithm run
-    int tournamentSize = 8;  // tournament size
-    double mutationRate = 0.1;  // the probability of mutation
-    // todo: if mutationRate smaller than 0.01 the program maybe crashed in mutation func
+    int epochs = 0;  // how many iteration will the algorithm run
+    double initPackingRate = 0.01;  // initialised packing rate (Z) - as small as possible
+    int tournamentSize = 50;  // tournament size
+    double orderCrossoverRate = 0.01;
+    double uniformCrossoverRate = 0.01;  // uniform crossover rate
+    double mutationRate = 0.05;  // the probability of mutation
 
     // Initiate the number of solutions from the problem
     public NTGA(int numOfSolutions) {
@@ -35,72 +28,234 @@ public class NTGA implements Algorithm{
 
     @Override
     public List<Solution> solve(TravelingThiefProblem problem) {
-        List<Solution> population = initPopulation(problem, false);  // init population
-        nonDominatedSorting(population, false);  // non-dominated sorting
-        List<Solution> newGeneration = new ArrayList<>();  // init new generation
-        while (newGeneration.size() < populationSize) {
-            List<Solution> parents = new ArrayList<>();
-            for (int n = 0; n < 2; ++n) {  // select two parents
-                Solution parent = tournamentSelect(population, tournamentSize);  // tournament selection
-                parents.add(parent);
-            }
-            List<Solution> offspring = orderCrossover(problem, parents, false, true);  // order crossover (OX)
-            mutate(problem, offspring, mutationRate, false);
-            // clone prevention
+        // init population
+        List<Solution> population = initPopulation(problem, populationSize, initPackingRate);
+        for (int epoch = 0; epoch < epochs; ++epoch) {
+            // non-dominated sorting
+            nonDominatedSorting(population, false);
+            // init new generation
+            List<Solution> newGeneration = new ArrayList<>();
+            // init index in new population
+            int solutionIndex = 0;
 
-//            for (Solution individual : offspring){
-                // todo: 直接isContained 函数形参是 offspring 否则每次循环都要重新newpopulation中的pi和z
-//                boolean individualInPopulation = isContained(individual, population);
-//                // show whether contain result
-//                System.out.println("whether contain: " + individualInPopulation);
-//                if (individualInPopulation){
-//                    continue;
-//                }
-//            }
+            while (newGeneration.size() < populationSize) {
+                List<Solution> parents = new ArrayList<>();
+                // select two individuals
+                for (int n = 0; n < 2; ++n) {
+                    // tournament selection
+                    Solution parent = tournamentSelect(population, tournamentSize, populationSize);
+                    parents.add(parent);
+                }
+
+                // order crossover (OX)
+                // todo: why the first of pi not be crossed
+                List<Solution> offspring = orderCrossover(problem, parents, orderCrossoverRate, uniformCrossoverRate);
+                // todo: consider 是否是因为交叉使基因型改变太大从而模型无法收敛
+                // todo: add an OX rate to allow genotype hold more original gene
+
+                // in-place mutation
+                mutate(offspring, mutationRate);
+                // in-place clone prevent - if a child is cloned from original population then mutate it
+                clonePrevent(offspring, population, mutationRate);
+                // evaluate offspring and add into new generation
+                for (Solution child : offspring) {
+                    child = problem.evaluate(child.pi, child.z, true);
+                    child.index = solutionIndex++;
+                    newGeneration.add(child);
+                }
+            }
+            // reset population
+            population = newGeneration;
+
+            // show epoch number
+            if (epochs > 10 && epoch % (epochs / 10) == 0) {
+                System.out.println("epoch: " + epoch);
+
+                // show objectives
+                for (Solution test : population){
+                    System.out.println(test.objectives);
+                }
+            }
 
         }
+
+//        // show population info
+//        for (Solution individual : population){
+//            System.out.println(individual.objectives);
+//        }
 
         return null;
     }
 
     /**
+     * clone prevention - check whether original population contains individual of new population
+     * @param newPopulation the population to be checked
+     * @param originalPopulation source population
+     */
+    private void clonePrevent(List<Solution> newPopulation, List<Solution> originalPopulation, double mutationRate){
+        for (Solution child : newPopulation){
+            for (Solution origin : originalPopulation){
+                if (child.equalsInDesignSpace(origin)) {  // compare the genotype between child and origin
+                    System.out.println("clone prevention execution");
+                    // place child into a list
+                    List<Solution> childInList = new ArrayList<>();
+                    childInList.add(child);
+                    mutate(childInList, mutationRate);  // in-place mutate the individual
+                }
+            }
+        }
+    }
+
+    /**
+     * M-gene / Swap individual mutation (in-place)
+     * @param IND either an individual or a population
+     * @param mutationRate the probability of mutation
+     */
+    private void mutate(List<Solution> IND, double mutationRate){
+        Random rand = new Random();
+
+        int percentMutationRate = (int) (mutationRate * 100);  // mutation rate in hundred percent
+        // M-gene Mutation Z
+        for (Solution individual : IND) {
+            for (int i = 0; i < individual.z.size(); ++i) {
+                if (rand.nextInt(100) < percentMutationRate) {
+                    if (individual.z.get(i)) {
+                        individual.z.set(i, false);
+                    } else {
+                        individual.z.set(i, true);
+                    }
+                }
+            }
+        }
+
+        // Swap Mutation PI
+        for (Solution individual : IND) {
+            for (int i = 1; i < individual.pi.size(); ++i) {  // the first tour should not be swap mutated
+                if (rand.nextInt(100) < percentMutationRate) {
+                    // Generate integers in the interval [1, size)
+                    int swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
+                    while (swapPosition == i)  // make sure the position to be swapped is different from current
+                        swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
+                    // the value to be swapped
+                    int pi1 = individual.pi.get(i);
+                    int pi2 = individual.pi.get(swapPosition);
+                    // swap
+                    individual.pi.set(i, pi2);
+                    individual.pi.set(swapPosition, pi1);
+                }
+            }
+        }
+    }
+
+    /**
+     * OX order / uniform crossover
+     * @param population a subset of population which only have two individuals
+     * @param uniformCrossoverRate uniform crossover rate
+     * @param orderCrossoverRate the percentage of parent gene to not be reserved (sublist)
+     * @return generated offspring by order crossover operation
+     */
+    private List<Solution> orderCrossover(TravelingThiefProblem problem, List<Solution> population, double orderCrossoverRate, double uniformCrossoverRate){
+        Random rand = new Random();
+        // get two parents
+        Solution parent1 = population.get(0);
+        Solution parent2 = population.get(1);
+
+        // pi size
+        int size = parent1.pi.size();
+        int sublistLength = (int)((1.00 - orderCrossoverRate) * size);  // sublist length
+        // choose two random numbers for the start and end indices of the slice
+        int start = rand.nextInt(size - sublistLength);
+        int end = start + sublistLength;
+//        System.out.println("slice: " + start + ", " + end);
+        // todo: complete rest code with crossover rate
+
+        // add the sublist in between the start and end points
+        List<Integer> sublist1 = new ArrayList<>(parent1.pi.subList(start, end));
+        List<Integer> sublist2 = new ArrayList<>(parent2.pi.subList(start, end));
+        // init children
+        List<Integer> firstChildPI = new ArrayList<>();
+        List<Integer> secondChildPI = new ArrayList<>();
+
+        // iterate over each city in the parent tours
+        for (int i = 0; i < size; ++i){
+            // get the city at the current index in each of the two parent tours
+            int currentCityInTour1 = parent1.pi.get(i);
+            int currentCityInTour2 = parent2.pi.get(i);
+            // if sublist1 does not already contain the current city in parent2, add it
+            if (!sublist1.contains(currentCityInTour2))
+                firstChildPI.add(currentCityInTour2);
+            // if sublist2 does not already contain the current city in parent1, add it
+            if (!sublist2.contains(currentCityInTour1))
+                secondChildPI.add(currentCityInTour1);
+        }
+
+        // crossover rate in hundred percent
+        int percentUniformCrossoverRate = (int) (uniformCrossoverRate * 100);
+        // add sublist into child
+        firstChildPI.addAll(start, sublist1);
+        secondChildPI.addAll(start, sublist2);
+
+        List<Boolean> firstChildZ = new ArrayList<>();
+        List<Boolean> secondChildZ = new ArrayList<>();
+
+        // perform uniform crossover for Z
+        for (int sizeIndex = 0; sizeIndex < parent1.z.size(); ++sizeIndex){
+            if (rand.nextInt(100) < percentUniformCrossoverRate){
+                firstChildZ.add(parent2.z.get(sizeIndex));
+                secondChildZ.add(parent1.z.get(sizeIndex));
+            }
+            else {
+                firstChildZ.add(parent1.z.get(sizeIndex));
+                secondChildZ.add(parent2.z.get(sizeIndex));
+            }
+        }
+
+
+        // init two children
+        Solution child1 = new Solution();
+        child1.pi = firstChildPI;
+        child1.z = firstChildZ;
+        Solution child2 = new Solution();
+        child2.pi = secondChildPI;
+        child2.z = secondChildZ;
+        // init children population
+        List<Solution> children = new ArrayList<>();
+        // add into children
+        children.add(child1);
+        children.add(child2);
+
+        return children;
+    }
+
+    /**
      * tournament selection
+     * comparison operator: I ≥r J if (Irank < Jrank) - the formula should be only used for NTGA
      * @param tournamentSize the number of individuals will be compare by comparison operator
      * @return the best individual
      * */
-    private Solution tournamentSelect(List<Solution> population, int tournamentSize){
+    private Solution tournamentSelect(List<Solution> population, int tournamentSize, int populationSize){
         Random rand = new Random();
         Solution best = population.get(rand.nextInt(populationSize));  // random select a individual
         for (int i = 1; i < tournamentSize; ++i){
             Solution individual = population.get(rand.nextInt(populationSize));  // random select a individual
-            /*Formula: I ≥r J if (Irank < Jrank) - comparison operator
-            * notice: the formula should be only used for NTGA*/
-            if (individual.rank < best.rank)
+            if (individual.rank < best.rank)  // comparison operator
                 best = individual;
         }
         return best;
     }
 
     /**
-     * clone prevention - whether the newPopulation is contained in the originalPopulation
-     * */
-    private void isContained(List<Solution>newPopulation, List<Solution> originalPopulation){
-        // todo: 可以参考checkForClones判断是否变异某个个体
-        // if cloned: mutate(individual)
-    }
-
-    /**
      * fast non-dominated sorting with time complexity O(MN^2) which M is objectives and N is individual number
      * */
     private void nonDominatedSorting(List<Solution> population, boolean showInfo){
-        // how many other individual can dominates an individual - 多少个体能支配它
+        // how many other individuals can dominate an individual - 多少个体能支配它
         List<Integer> dominated = new ArrayList<>(population.size());
-        // list of individual that an individual dominates - 支配哪些个体
+        // list of individuals that an individual dominates - 支配哪些个体
         List<List<Integer>> dominates = new ArrayList<>(population.size());
         List<List<Integer>> paretoFront = new ArrayList<>();  // Pareto front
 
         for (Solution s : population){
-            s.rank = -1;  // reset rank for each individual
+            s.rank = Integer.MAX_VALUE;  // reset rank for each individual
             // init list
             dominated.add(0);
             dominates.add(new ArrayList<>());
@@ -125,7 +280,6 @@ public class NTGA implements Algorithm{
         }
 
         if (showInfo) {
-            System.out.println("paretoFront: " + paretoFront);
             System.out.println("dominated: " + dominated);
             System.out.println("dominates: " + dominates);
         }
@@ -138,7 +292,7 @@ public class NTGA implements Algorithm{
                     int otherIndividual = dominates.get(paretoFront.get(i).get(m)).get(n);
                     dominated.set(otherIndividual, dominated.get(otherIndividual)-1);
                     if (dominated.get(otherIndividual) == 0){
-                        population.get(otherIndividual).rank = i + 1;
+                        population.get(otherIndividual).rank = i + 1;  // sorting
                         temp.add(otherIndividual);
                     }
                 }
@@ -151,190 +305,27 @@ public class NTGA implements Algorithm{
     }
 
     /**
-     * order crossover OX
-     * @param population a subset of population which only have two individuals
-     * @return generated offspring by order crossover operation
-     */
-    private List<Solution> orderCrossover(TravelingThiefProblem problem, List<Solution> population, boolean showInfo, boolean crossoverZ){
-        Random rand = new Random();
-
-        Solution parent1 = population.get(0);
-        Solution parent2 = population.get(1);
-        int size = parent1.pi.size();  // get the size of tours
-
-        List<Solution> children = new ArrayList<>();  // init children population
-
-        // choose two random numbers for the start and end indices of the slice
-        int number1 = rand.nextInt(size - 1);
-        int number2 = rand.nextInt(size);
-        // make the smaller the start and the larger the end
-        int start = Math.min(number1, number2);
-        int end = Math.max(number1, number2);
-
-        if (showInfo) {
-            System.out.println("parent1_genotype = " + parent1.pi);
-            System.out.println("parent2_genotype = " + parent2.pi + "\n");
-            System.out.println("slice = [" + start + ", " + end + "]\n");
-        }
-
-        // add the sublist in between the start and end points
-        List<Integer> sublist1 = new ArrayList<>(parent1.pi.subList(start, end));
-        List<Integer> sublist2 = new ArrayList<>(parent2.pi.subList(start, end));
-        // init children
-        List<Integer> firstChildPI = new ArrayList<>();
-        List<Integer> secondChildPI = new ArrayList<>();
-
-        // iterate over each city in the parent tours
-        for (int i = 0; i < size; ++i){
-            // get the city at the current index in each of the two parent tours
-            int currentCityInTour1 = parent1.pi.get(i);
-            int currentCityInTour2 = parent2.pi.get(i);
-            // if sublist1 does not already contain the current city in parent2, add it
-            if (!sublist1.contains(currentCityInTour2))
-                firstChildPI.add(currentCityInTour2);
-            // if sublist2 does not already contain the current city in parent1, add it
-            if (!sublist2.contains(currentCityInTour1))
-                secondChildPI.add(currentCityInTour1);
-        }
-        if (showInfo) {
-            System.out.println("child1 = " + firstChildPI);
-            System.out.println("child2 = " + secondChildPI + "\n");
-            System.out.println("sublist1 = " + sublist1);
-            System.out.println("sublist2 = " + sublist2 + "\n");
-        }
-
-        // add sublist into child
-        firstChildPI.addAll(start, sublist1);
-        secondChildPI.addAll(start, sublist2);
-
-//        // in-place copy operation
-//        Collections.copy(parent1.pi, firstChildPI);
-//        Collections.copy(parent2.pi, firstChildPI);
-
-        if (showInfo) {
-            System.out.println("after_crossover1 = " + firstChildPI);
-            System.out.println("after_crossover2 = " + secondChildPI);
-        }
-
-        // I am not sure whether Z need be crossover
-        List<Boolean> firstChildZ = new ArrayList<>();
-        List<Boolean> secondChildZ = new ArrayList<>();
-        if(crossoverZ){  // perform uniform crossover for Z
-            for (int i = 0; i < parent1.z.size(); ++i){
-                if (rand.nextInt(2) == 0){
-                    firstChildZ.add(parent1.z.get(i));
-                    secondChildZ.add(parent2.z.get(i));
-                }
-                else {
-                    firstChildZ.add(parent2.z.get(i));
-                    secondChildZ.add(parent1.z.get(i));
-                }
-            }
-        }
-        else {
-            firstChildZ = parent1.z;
-            secondChildZ = parent2.z;
-        }
-
-        if (showInfo) {
-            System.out.println("parent1Z: " + parent1.z);
-            System.out.println("parent2Z: " + parent2.z);
-            System.out.println("child1Z: " + firstChildZ);
-            System.out.println("child2Z: " + secondChildZ);
-        }
-
-//        // evaluate generated children population
-//        Solution child1 = problem.evaluate(firstChildPI, firstChildZ, true);
-//        Solution child2 = problem.evaluate(secondChildPI, secondChildZ, true);
-
-        // init two children
-        Solution child1 = new Solution();
-        child1.pi = firstChildPI;
-        child1.z = firstChildZ;
-        Solution child2 = new Solution();
-        child2.pi = secondChildPI;
-        child2.z = secondChildZ;
-
-        children.add(child1);
-        children.add(child2);
-
-        return children;
-    }
-
-    /**
-     * M-gene / Swap individual mutation (in-place)
-     * @param IND either an individual or a popualtion
-     * @param mutationRate the probability of mutation
-     */
-    private void mutate(TravelingThiefProblem problem, List<Solution> IND, double mutationRate, boolean showInfo){
-        Random rand = new Random();
-
-        // show one of population info before mutation Z
-        if (showInfo)
-            System.out.println("before mutation:" + "\n" + "individual: " + IND.get(0).z);
-
-        int percentMutationRate = (int) (mutationRate * 100);  // mutation rate in hundred percent
-        // M-gene Mutation Z
-        for (Solution individual : IND) {
-            for (int i = 0; i < individual.z.size(); ++i) {
-                if (rand.nextInt(100) < percentMutationRate) {
-                    if (individual.z.get(i)) {
-                        individual.z.set(i, false);
-                    } else {
-                        individual.z.set(i, true);
-                    }
-                }
-            }
-        }
-
-        // show one of population info after mutation Z
-        if (showInfo)
-            System.out.println("after mutation:" + "\n" + "individual: " + IND.get(0).z);
-
-        // show one of population info before mutation pi
-        if (showInfo)
-            System.out.println("before mutation pi:" + "\n" + "individual: " + IND.get(0).pi);
-        // Swap Mutation PI
-        for (Solution individual : IND) {
-            for (int i = 1; i < individual.pi.size(); ++i) {  // the first tour should not be swap mutated
-                if (rand.nextInt(100) < percentMutationRate) {
-                    // Generate integers in the interval [1, size)
-                    int swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
-                    while (swapPosition == i)  // make sure the position to ve swapped is different from current
-                        swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
-                    // the value to be swapped
-                    int pi1 = individual.pi.get(i);
-                    int pi2 = individual.pi.get(swapPosition);
-                    // swap
-                    individual.pi.set(i, pi2);
-                    individual.pi.set(swapPosition, pi1);
-                }
-            }
-        }
-        // show one of population info after mutation pi
-        if (showInfo)
-            System.out.println("before mutation pi:" + "\n" + "individual: " + IND.get(0).pi);
-    }
-
-    /**
      * Initialise population
+     * @param initPackingRate initialised packing rate (Z)
      */
-    private List<Solution> initPopulation(TravelingThiefProblem problem, boolean showPopulationInfo){
+    private List<Solution> initPopulation(TravelingThiefProblem problem, int populationSize, double initPackingRate){
         Random rand = new Random();
-        List<Solution> population = new ArrayList<>();  // init population
-        int counter = 0;
+
+        List<Solution> population = new ArrayList<>();  // init a population
+        int individualIndex = 0;  // init individual index
+        int packingRate = (int) (initPackingRate * 100);  // convert packing into hundred percent (int)
+//        System.out.println("packing rate: " + packingRate);
 
         while(population.size() < populationSize){
-            // init random tour
+            // random init tour (pi) scheme
             List<Integer> pi = getIndex(1, problem.numOfCities);
             Collections.shuffle(pi);
             pi.add(0,0);
 
-            // Create a random packing plan
+            // init packing scheme
             List<Boolean> z = new ArrayList<>(problem.numOfItems);
-            int packingRate = rand.nextInt(101);  // random packing rate from 0% to 100%
             for (int i = 0; i < problem.numOfItems; ++i){
-                if (rand.nextInt(101) <= packingRate){
+                if (rand.nextInt(100) < packingRate){
                     z.add(true);
                 }
                 else {
@@ -342,28 +333,13 @@ public class NTGA implements Algorithm{
                 }
             }
 
-            // evaluate for this random tour
+            // evaluate the individual
             Solution s = problem.evaluate(pi, z, true);
             if (s != null) {
-                s.index = counter;
-                population.add(s);
-                // show population info
-                if (showPopulationInfo) {
-                    System.out.println("index: " + counter + " Solution name: " + s);
-                    System.out.println(s.pi.size() + " number of tour:\n" + s.pi);
-                    System.out.println(s.z.size() + " number of packing plan:\n" + s.z);
-                    System.out.println("packing rate: " + packingRate + '%');
-
-                    System.out.println("time: " + s.time);
-                    System.out.println("profit: " + s.objectives.get(1));
-                    System.out.println("rank: " + s.rank + '\n');
-                }
-                ++counter;
+                s.index = individualIndex++;
+                population.add(s);  // add the individual into population
             }
         }
-        if (showPopulationInfo)
-            System.out.println("population: " + population + '\n' + "population size: " + population.size());
-        entries.addAll(population);
         return population;
     }
 
