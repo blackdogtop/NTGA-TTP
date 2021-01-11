@@ -14,12 +14,12 @@ public class NTGA implements Algorithm{
     /**
      * the hyper-parameters below can by changed logically
      * */
-    int epochs = 10000;  // how many iteration will the algorithm run
-    double initPackingRate = 0.05;  // initialised packing rate (Z) - as small as possible
-    int tournamentSize = 50;  // tournament size
+    int epochs = 11;  // how many iteration will the algorithm run
+    double initPackingRate = 0.05;
+    int tournamentSize = 8;
     double orderCrossoverRate = 0.01;
-    double uniformCrossoverRate = 0.01;  // uniform crossover rate
-    double mutationRate = 0.01;  // the probability of mutation
+    double uniformCrossoverRate = 0.01;
+    double mutationRate = 0.01;
 
     // Initiate the number of solutions from the problem
     public NTGA(int numOfSolutions) {
@@ -33,12 +33,13 @@ public class NTGA implements Algorithm{
 
         // generation limitation
         for (int epoch = 0; epoch < epochs; ++epoch) {
+            // init a new generation and individual index
+            List<Solution> newGeneration = new ArrayList<>();
+            int solutionIndex = 0;
+
             // non-dominated sorting
             nonDominatedSorting(population, false);
-            // init new generation
-            List<Solution> newGeneration = new ArrayList<>();
-            // init index in new population
-            int solutionIndex = 0;
+
             while (newGeneration.size() < populationSize) {
                 List<Solution> parents = new ArrayList<>();
                 // select two individuals
@@ -49,22 +50,10 @@ public class NTGA implements Algorithm{
                 }
                 // order crossover (OX)
                 List<Solution> offspring = orderCrossover(problem, parents, orderCrossoverRate, uniformCrossoverRate);
-
-//                // test offspring directly copy parents
-//                List<Solution> offspring = new ArrayList<>();
-//                Solution child1 = new Solution();
-//                Solution child2 = new Solution();
-//                child1.pi = new ArrayList<>(parents.get(0).pi);
-//                child2.pi = new ArrayList<>(parents.get(1).pi);
-//                child1.z = new ArrayList<>(parents.get(0).z);
-//                child2.z = new ArrayList<>(parents.get(1).z);
-//                offspring.add(child1);
-//                offspring.add(child2);
-
                 // in-place mutation
                 mutate(offspring, mutationRate, false);
                 // in-place clone prevent - if a child is cloned from original population then mutate it
-//                clonePrevent(offspring, population, mutationRate);
+                clonePrevent(offspring, population, mutationRate);
                 // evaluate offspring and add into new generation
                 for (Solution child : offspring) {
                     child = problem.evaluate(child.pi, child.z, true);
@@ -87,11 +76,6 @@ public class NTGA implements Algorithm{
 
         }
 
-//        // show population info
-//        for (Solution individual : population){
-//            System.out.println(individual.objectives);
-//        }
-
         return null;
     }
 
@@ -102,14 +86,11 @@ public class NTGA implements Algorithm{
      */
     private void clonePrevent(List<Solution> newPopulation, List<Solution> originalPopulation, double mutationRate){
         for (Solution child : newPopulation){
-            for (Solution origin : originalPopulation){
-                if (child.equalsInDesignSpace(origin)) {  // compare the genotype between child and origin
-                    System.out.println("clone prevention execution");
-                    // place child into a list
-                    List<Solution> childInList = new ArrayList<>();
-                    childInList.add(child);
-                    mutate(childInList, mutationRate, false);  // in-place mutate the individual
-                }
+            while (isCloned(child, originalPopulation)){
+                // place child into a list
+                List<Solution> childInList = new ArrayList<>();
+                childInList.add(child);
+                mutate(childInList, mutationRate, false);  // in-place mutate the individual
             }
         }
     }
@@ -359,6 +340,17 @@ public class NTGA implements Algorithm{
             }
         }
         return population;
+    }
+
+    /**
+     * the function is used to judge whether the individual is cloned from population
+     */
+    private boolean isCloned(Solution individual, List<Solution> population){
+        for (Solution other : population){
+            if (individual.equalsInDesignSpace(other))  // compare the genotype between individual and other
+                return true;
+        }
+        return false;
     }
 
     private List<Integer> getIndex(int low, int high) {
