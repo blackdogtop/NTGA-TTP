@@ -14,12 +14,12 @@ public class NTGA implements Algorithm{
     /**
      * the hyper-parameters below can by changed logically
      * */
-    int epochs = 0;  // how many iteration will the algorithm run
-    double initPackingRate = 0.01;  // initialised packing rate (Z) - as small as possible
+    int epochs = 10000;  // how many iteration will the algorithm run
+    double initPackingRate = 0.05;  // initialised packing rate (Z) - as small as possible
     int tournamentSize = 50;  // tournament size
     double orderCrossoverRate = 0.01;
     double uniformCrossoverRate = 0.01;  // uniform crossover rate
-    double mutationRate = 0.05;  // the probability of mutation
+    double mutationRate = 0.01;  // the probability of mutation
 
     // Initiate the number of solutions from the problem
     public NTGA(int numOfSolutions) {
@@ -30,6 +30,8 @@ public class NTGA implements Algorithm{
     public List<Solution> solve(TravelingThiefProblem problem) {
         // init population
         List<Solution> population = initPopulation(problem, populationSize, initPackingRate);
+
+        // generation limitation
         for (int epoch = 0; epoch < epochs; ++epoch) {
             // non-dominated sorting
             nonDominatedSorting(population, false);
@@ -37,7 +39,6 @@ public class NTGA implements Algorithm{
             List<Solution> newGeneration = new ArrayList<>();
             // init index in new population
             int solutionIndex = 0;
-
             while (newGeneration.size() < populationSize) {
                 List<Solution> parents = new ArrayList<>();
                 // select two individuals
@@ -46,17 +47,24 @@ public class NTGA implements Algorithm{
                     Solution parent = tournamentSelect(population, tournamentSize, populationSize);
                     parents.add(parent);
                 }
-
                 // order crossover (OX)
-                // todo: why the first of pi not be crossed
                 List<Solution> offspring = orderCrossover(problem, parents, orderCrossoverRate, uniformCrossoverRate);
-                // todo: consider 是否是因为交叉使基因型改变太大从而模型无法收敛
-                // todo: add an OX rate to allow genotype hold more original gene
+
+//                // test offspring directly copy parents
+//                List<Solution> offspring = new ArrayList<>();
+//                Solution child1 = new Solution();
+//                Solution child2 = new Solution();
+//                child1.pi = new ArrayList<>(parents.get(0).pi);
+//                child2.pi = new ArrayList<>(parents.get(1).pi);
+//                child1.z = new ArrayList<>(parents.get(0).z);
+//                child2.z = new ArrayList<>(parents.get(1).z);
+//                offspring.add(child1);
+//                offspring.add(child2);
 
                 // in-place mutation
-                mutate(offspring, mutationRate);
+                mutate(offspring, mutationRate, false);
                 // in-place clone prevent - if a child is cloned from original population then mutate it
-                clonePrevent(offspring, population, mutationRate);
+//                clonePrevent(offspring, population, mutationRate);
                 // evaluate offspring and add into new generation
                 for (Solution child : offspring) {
                     child = problem.evaluate(child.pi, child.z, true);
@@ -65,7 +73,7 @@ public class NTGA implements Algorithm{
                 }
             }
             // reset population
-            population = newGeneration;
+            population = new ArrayList<>(newGeneration);
 
             // show epoch number
             if (epochs > 10 && epoch % (epochs / 10) == 0) {
@@ -100,7 +108,7 @@ public class NTGA implements Algorithm{
                     // place child into a list
                     List<Solution> childInList = new ArrayList<>();
                     childInList.add(child);
-                    mutate(childInList, mutationRate);  // in-place mutate the individual
+                    mutate(childInList, mutationRate, false);  // in-place mutate the individual
                 }
             }
         }
@@ -110,8 +118,9 @@ public class NTGA implements Algorithm{
      * M-gene / Swap individual mutation (in-place)
      * @param IND either an individual or a population
      * @param mutationRate the probability of mutation
+     * @param useSwapMutate whether use Swap Mutation for pi
      */
-    private void mutate(List<Solution> IND, double mutationRate){
+    private void mutate(List<Solution> IND, double mutationRate, boolean useSwapMutate){
         Random rand = new Random();
 
         int percentMutationRate = (int) (mutationRate * 100);  // mutation rate in hundred percent
@@ -128,22 +137,33 @@ public class NTGA implements Algorithm{
             }
         }
 
-        // Swap Mutation PI
-        for (Solution individual : IND) {
-            for (int i = 1; i < individual.pi.size(); ++i) {  // the first tour should not be swap mutated
-                if (rand.nextInt(100) < percentMutationRate) {
-                    // Generate integers in the interval [1, size)
-                    int swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
-                    while (swapPosition == i)  // make sure the position to be swapped is different from current
-                        swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
-                    // the value to be swapped
-                    int pi1 = individual.pi.get(i);
-                    int pi2 = individual.pi.get(swapPosition);
-                    // swap
-                    individual.pi.set(i, pi2);
-                    individual.pi.set(swapPosition, pi1);
+        // decide which type of mutation for pi
+        if (useSwapMutate) {
+            // Swap Mutation PI
+            for (Solution individual : IND) {
+                for (int i = 1; i < individual.pi.size(); ++i) {  // the first tour should not be swap mutated
+                    if (rand.nextInt(100) < percentMutationRate) {
+                        // Generate integers in the interval [1, size)
+                        int swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
+                        while (swapPosition == i)  // make sure the position to be swapped is different from current
+                            swapPosition = rand.nextInt(individual.pi.size() - 1) + 1;
+                        // swap
+                        Collections.swap(individual.pi, i, swapPosition);
+                    }
                 }
             }
+        }
+        else {
+            int reverseStart = rand.nextInt(IND.get(0).pi.size() - 1) + 1;  // random select a point from [1, piSize)
+            int piMutateNumber = (int) (mutationRate * IND.get(0).pi.size());  // number of pi gene to be mutated
+            int reverseEnd = reverseStart + piMutateNumber;  // reverse end point index
+            if (reverseEnd > IND.get(0).pi.size()){  // index limitation
+                reverseEnd = IND.get(0).pi.size();
+            }
+            for (Solution individual : IND){
+                Collections.reverse(individual.pi.subList(reverseStart, reverseEnd));  // mutate execution
+            }
+
         }
     }
 
@@ -151,7 +171,7 @@ public class NTGA implements Algorithm{
      * OX order / uniform crossover
      * @param population a subset of population which only have two individuals
      * @param uniformCrossoverRate uniform crossover rate
-     * @param orderCrossoverRate the percentage of parent gene to not be reserved (sublist)
+     * @param orderCrossoverRate the percentage of parent gene not be reserved
      * @return generated offspring by order crossover operation
      */
     private List<Solution> orderCrossover(TravelingThiefProblem problem, List<Solution> population, double orderCrossoverRate, double uniformCrossoverRate){
@@ -167,7 +187,6 @@ public class NTGA implements Algorithm{
         int start = rand.nextInt(size - sublistLength);
         int end = start + sublistLength;
 //        System.out.println("slice: " + start + ", " + end);
-        // todo: complete rest code with crossover rate
 
         // add the sublist in between the start and end points
         List<Integer> sublist1 = new ArrayList<>(parent1.pi.subList(start, end));
@@ -188,12 +207,12 @@ public class NTGA implements Algorithm{
             if (!sublist2.contains(currentCityInTour1))
                 secondChildPI.add(currentCityInTour1);
         }
-
-        // crossover rate in hundred percent
-        int percentUniformCrossoverRate = (int) (uniformCrossoverRate * 100);
         // add sublist into child
         firstChildPI.addAll(start, sublist1);
         secondChildPI.addAll(start, sublist2);
+
+        // crossover rate in hundred percent
+        int percentUniformCrossoverRate = (int) (uniformCrossoverRate * 100);
 
         List<Boolean> firstChildZ = new ArrayList<>();
         List<Boolean> secondChildZ = new ArrayList<>();
@@ -209,7 +228,6 @@ public class NTGA implements Algorithm{
                 secondChildZ.add(parent2.z.get(sizeIndex));
             }
         }
-
 
         // init two children
         Solution child1 = new Solution();
@@ -313,7 +331,7 @@ public class NTGA implements Algorithm{
 
         List<Solution> population = new ArrayList<>();  // init a population
         int individualIndex = 0;  // init individual index
-        int packingRate = (int) (initPackingRate * 100);  // convert packing into hundred percent (int)
+        int packingRate = (int) (initPackingRate * 100);  // convert packing rate into hundred percent (int)
 //        System.out.println("packing rate: " + packingRate);
 
         while(population.size() < populationSize){
