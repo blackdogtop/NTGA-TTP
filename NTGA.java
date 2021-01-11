@@ -1,9 +1,11 @@
 package algorithms;
 
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+
 
 import model.Solution;
 import model.TravelingThiefProblem;
@@ -14,13 +16,14 @@ public class NTGA implements Algorithm{
     int populationSize;
     /**
      * the hyper-parameters below can by changed logically
+     * epochs
      * */
-    int epochs = 100;  // how many iteration will the algorithm run
+    int epochs = 10000;
     double initPackingRate = 0.05;
-    int tournamentSize = 50;
+    int tournamentSize = 2;
     double orderCrossoverRate = 0.01;
     double uniformCrossoverRate = 0.01;
-    double mutationRate = 0.01;
+    double mutationRate = 0.03;
 
     // Initiate the number of solutions from the problem
     public NTGA(int numOfSolutions) {
@@ -58,11 +61,17 @@ public class NTGA implements Algorithm{
 
                 // improved here - offspring must not worse than parents to make sure population optimized
                 // if you do not want, just comment the while
+                // limit runtime of improvement method
+                int executeControl = 1000;
+                int executeTime = 0;
                 while (parentsBetterThanOffspring(problem, offspring, parents)){
+                    if (executeTime > executeControl)
+                        break;
                     // generate offspring
                     offspring = orderCrossover(problem, parents, orderCrossoverRate, uniformCrossoverRate);
                     mutate(offspring, mutationRate, false);
                     clonePrevent(offspring, population, mutationRate, false);
+                    ++executeTime;
                 }
 
                 // evaluate offspring and add into new generation
@@ -80,9 +89,30 @@ public class NTGA implements Algorithm{
                 System.out.println("epoch: " + epoch);
 
                 // show objectives for each mini-epoch
-//                for (Solution test : population){
-//                    System.out.println(test.objectives);
-//                }
+                for (Solution test : population){
+                    System.out.println(test.objectives);
+                }
+            }
+            // write population objectives for each epoch into a file
+            try {
+                String fileName = String.format("data/%s.txt", problem.name);
+                File writeName = new File(fileName);
+                File parentDir = writeName.getParentFile();
+                if (!parentDir.exists() && !parentDir.mkdirs())
+                    throw new IllegalStateException("Couldn't create dir: " + parentDir);
+                if (!writeName.exists())
+                    writeName.createNewFile();
+                PrintWriter out = new PrintWriter(new FileWriter(writeName, true));
+
+                out.append("Epoch: " + epoch + "\n");
+                for (Solution tempIndividual : population)
+                    out.append(tempIndividual.objectives + "\n");
+
+                out.close();
+
+            }
+            catch (Exception e){
+                e.printStackTrace();
             }
         }
 
@@ -315,9 +345,7 @@ public class NTGA implements Algorithm{
 
         for (Solution p : population){
             for (Solution q : population){
-                if (p == q)
-                    continue;
-                else if (p.getRelation(q) == 1){  // p dominates q
+                if (p.getRelation(q) == 1){  // p dominates q
                     dominates.get(p.index).add(q.index);
                 }
                 else if (p.getRelation(q) == -1){  // p is dominated by q
