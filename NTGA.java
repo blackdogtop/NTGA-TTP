@@ -8,15 +8,16 @@ import java.util.Random;
 import model.Solution;
 import model.TravelingThiefProblem;
 
-// NTGA (Non-dominated Tournament Genetic Algorithm) implementation for TTP (traveling thief problem)
+
+// an improved NTGA (Non-dominated Tournament Genetic Algorithm) implementation for TTP (traveling thief problem)
 public class NTGA implements Algorithm{
     int populationSize;
     /**
      * the hyper-parameters below can by changed logically
      * */
-    int epochs = 11;  // how many iteration will the algorithm run
+    int epochs = 100;  // how many iteration will the algorithm run
     double initPackingRate = 0.05;
-    int tournamentSize = 8;
+    int tournamentSize = 50;
     double orderCrossoverRate = 0.01;
     double uniformCrossoverRate = 0.01;
     double mutationRate = 0.01;
@@ -38,7 +39,7 @@ public class NTGA implements Algorithm{
             int solutionIndex = 0;
 
             // non-dominated sorting
-            nonDominatedSorting(population, false);
+            nonDominatedSorting(population, false, true);
 
             while (newGeneration.size() < populationSize) {
                 List<Solution> parents = new ArrayList<>();
@@ -53,10 +54,20 @@ public class NTGA implements Algorithm{
                 // in-place mutation
                 mutate(offspring, mutationRate, false);
                 // in-place clone prevent - if a child is cloned from original population then mutate it
-                clonePrevent(offspring, population, mutationRate);
+                clonePrevent(offspring, population, mutationRate, false);
+
+                // improved here - offspring must not worse than parents to make sure population optimized
+                // if you do not want, just comment the while
+                while (parentsBetterThanOffspring(problem, offspring, parents)){
+                    // generate offspring
+                    offspring = orderCrossover(problem, parents, orderCrossoverRate, uniformCrossoverRate);
+                    mutate(offspring, mutationRate, false);
+                    clonePrevent(offspring, population, mutationRate, false);
+                }
+
                 // evaluate offspring and add into new generation
                 for (Solution child : offspring) {
-                    child = problem.evaluate(child.pi, child.z, true);
+                    child = problem.evaluate(child.pi, child.z, true);  // update objectives
                     child.index = solutionIndex++;
                     newGeneration.add(child);
                 }
@@ -68,15 +79,45 @@ public class NTGA implements Algorithm{
             if (epochs > 10 && epoch % (epochs / 10) == 0) {
                 System.out.println("epoch: " + epoch);
 
-                // show objectives
-                for (Solution test : population){
-                    System.out.println(test.objectives);
-                }
+                // show objectives for each mini-epoch
+//                for (Solution test : population){
+//                    System.out.println(test.objectives);
+//                }
             }
-
         }
 
-        return null;
+        // show objective for the latest generation
+//        for (Solution last : population){
+//            System.out.println(last.objectives);
+//        }
+
+        return population;
+    }
+
+    /**
+     * whether parents better than offspring
+     */
+    private boolean parentsBetterThanOffspring(TravelingThiefProblem problem, List<Solution> offspring, List<Solution> parents){
+        List<Solution> tempPopulation = new ArrayList<>();
+        int individualIndex = 0;
+        for (Solution parent : parents){
+            List<Integer> tempParentPI = new ArrayList<>(parent.pi);
+            List<Boolean> tempParentZ = new ArrayList<>(parent.z);
+            Solution tempParent = problem.evaluate(tempParentPI, tempParentZ, true);
+            tempParent.index = individualIndex++;
+            tempPopulation.add(tempParent);
+        }
+        for (Solution child : offspring){
+            List<Integer> tempChildPI = new ArrayList<>(child.pi);
+            List<Boolean> tempChildZ = new ArrayList<>(child.z);
+            Solution tempChild = problem.evaluate(tempChildPI, tempChildZ, true);
+            tempChild.index = individualIndex++;
+            tempPopulation.add(tempChild);
+        }
+        List<Integer> tempRanks = nonDominatedSorting(tempPopulation, false, false);
+        int minOffspringRank = Collections.min(tempRanks.subList(2, 4));
+        int maxParentsRank = Collections.max(tempRanks.subList(0, 2));
+        return maxParentsRank < minOffspringRank;
     }
 
     /**
@@ -84,9 +125,11 @@ public class NTGA implements Algorithm{
      * @param newPopulation the population to be checked
      * @param originalPopulation source population
      */
-    private void clonePrevent(List<Solution> newPopulation, List<Solution> originalPopulation, double mutationRate){
+    private void clonePrevent(List<Solution> newPopulation, List<Solution> originalPopulation, double mutationRate, boolean showNotice){
         for (Solution child : newPopulation){
             while (isCloned(child, originalPopulation)){
+                if (showNotice)
+                    System.out.println("clone prevent execution");
                 // place child into a list
                 List<Solution> childInList = new ArrayList<>();
                 childInList.add(child);
@@ -212,11 +255,15 @@ public class NTGA implements Algorithm{
 
         // init two children
         Solution child1 = new Solution();
-        child1.pi = firstChildPI;
-        child1.z = firstChildZ;
+//        child1.pi = firstChildPI;
+//        child1.z = firstChildZ;
+        child1.pi = new ArrayList<>(firstChildPI);
+        child1.z = new ArrayList<>(firstChildZ);
         Solution child2 = new Solution();
-        child2.pi = secondChildPI;
-        child2.z = secondChildZ;
+//        child2.pi = secondChildPI;
+//        child2.z = secondChildZ;
+        child2.pi = new ArrayList<>(secondChildPI);
+        child2.z = new ArrayList<>(secondChildZ);
         // init children population
         List<Solution> children = new ArrayList<>();
         // add into children
@@ -245,16 +292,21 @@ public class NTGA implements Algorithm{
 
     /**
      * fast non-dominated sorting with time complexity O(MN^2) which M is objectives and N is individual number
+     * @param updateRank whether update the individual rank
      * */
-    private void nonDominatedSorting(List<Solution> population, boolean showInfo){
+    private List<Integer> nonDominatedSorting(List<Solution> population, boolean showInfo, boolean updateRank){
         // how many other individuals can dominate an individual - 多少个体能支配它
         List<Integer> dominated = new ArrayList<>(population.size());
         // list of individuals that an individual dominates - 支配哪些个体
         List<List<Integer>> dominates = new ArrayList<>(population.size());
         List<List<Integer>> paretoFront = new ArrayList<>();  // Pareto front
 
+        List<Integer> ranks = new ArrayList<>();  // a list is used to store rank
+
         for (Solution s : population){
-            s.rank = Integer.MAX_VALUE;  // reset rank for each individual
+            if (updateRank) {
+                s.rank = Integer.MAX_VALUE;  // reset rank for each individual
+            }
             // init list
             dominated.add(0);
             dominates.add(new ArrayList<>());
@@ -273,7 +325,12 @@ public class NTGA implements Algorithm{
                 }
             }
             if (dominated.get(p.index) == 0){  // pareto front
-                p.rank = 0;
+                if (updateRank) {
+                    p.rank = 0;
+                }
+                else {
+                    ranks.add(0);
+                }
                 paretoFront.get(0).add(p.index);
             }
         }
@@ -291,7 +348,12 @@ public class NTGA implements Algorithm{
                     int otherIndividual = dominates.get(paretoFront.get(i).get(m)).get(n);
                     dominated.set(otherIndividual, dominated.get(otherIndividual)-1);
                     if (dominated.get(otherIndividual) == 0){
-                        population.get(otherIndividual).rank = i + 1;  // sorting
+                        if (updateRank) {
+                            population.get(otherIndividual).rank = i + 1;  // sorting
+                        }
+                        else {
+                            ranks.add(i + 1);
+                        }
                         temp.add(otherIndividual);
                     }
                 }
@@ -301,6 +363,13 @@ public class NTGA implements Algorithm{
         }
         if (showInfo)
             System.out.println("paretoFront: " + paretoFront);
+
+        if (updateRank){
+            return null;
+        }
+        else {
+            return ranks;
+        }
     }
 
     /**
