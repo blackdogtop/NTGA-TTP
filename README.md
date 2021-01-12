@@ -3,7 +3,7 @@ A Non-dominated Tournament Genetic Algorithm (NTGA) for Traveling Thief Problem 
 
 This repository is cloned from [gecco19-thief](https://github.com/julesy89/gecco19-thief), which is a template of Bi-objective Traveling Thief Problem. <br/>
 
-The [Non-dominated Trounament Genetic Algorithm (NTGA)](https://github.com/blackdogtop/NTGA-TTP/blob/master/src/main/java/algorithms/NTGA.java) is implemented by myself inorder to optimize the TTP and the pseudocode can refer to **Improved selection in evolutionary multi–objective optimization of multi–skill resource–constrained project scheduling problem**. <br/>
+The [Non-dominated Trounament Genetic Algorithm (NTGA)](https://github.com/blackdogtop/NTGA-TTP/blob/master/src/main/java/algorithms/NTGA.java) is implemented by myself inorder to optimize the TTP and the pseudocode can refer to ***Improved selection in evolutionary multi–objective optimization of multi–skill resource–constrained project scheduling problem***. <br/>
 
 Otherwise, more details of the TTP can be found [here](https://www.egr.msu.edu/coinlab/blankjul/gecco19-thief/) <br/>
 
